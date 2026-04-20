@@ -576,7 +576,7 @@
         'Self-contained U.S. map with FC-code labels, region memory boards, flashcards, and road-mile estimates from Santa Fe Springs. No map tiles are loaded, so the background will not break in the app browser.',
         '离线自带美国地图、仓点标签、区域记忆板、闪卡和从 Santa Fe Springs 出发的路程估算；不依赖地图瓦片，所以应用浏览器里不容易坏图。'
       ],
-      search: ['Search FC, city, state, zone...', '搜索仓点、城市、州、区域...'],
+      search: ['Search FCs: LAX9, SBD3 or city/state/zone...', '搜索多个仓点：LAX9, SBD3，或城市/州/区域...'],
       allLabels: ['All labels', '全部标签'],
       topStudyLabels: ['Top study labels', '重点学习标签'],
       selectedOnly: ['Selected only', '仅选中仓点'],
@@ -730,11 +730,40 @@
       nextBtn.textContent = textPair('next');
     }
 
+    function searchQuery() {
+      const raw = search.value.trim();
+      if (!raw) return { empty: true, text: '', codeTokens: [], multiCode: false };
+      const hasExplicitSeparator = /[,;|，、\n]/.test(raw);
+      const parts = raw.split(hasExplicitSeparator ? /[,;|，、\s]+/ : /\s+/).filter(Boolean);
+      const codeTokens = parts
+        .map(part => part.toUpperCase().replace(/[^A-Z0-9]/g, ''))
+        .filter(part => part && /^[A-Z0-9]{2,6}$/.test(part));
+      const knownCodeTokens = codeTokens.filter(token => WAREHOUSES.some(d => d.fc === token || d.fc.includes(token)));
+      return {
+        empty: false,
+        text: raw.toLowerCase(),
+        codeTokens: knownCodeTokens,
+        multiCode: knownCodeTokens.length > 0 && (hasExplicitSeparator || knownCodeTokens.length > 1)
+      };
+    }
+
+    function matchesSearch(d, query) {
+      if (query.empty) return true;
+      const haystack = [d.fc, d.city_state, d.zone, d.recommended_to, d.address].join(' ').toLowerCase();
+      if (query.multiCode) return query.codeTokens.some(token => d.fc === token || d.fc.includes(token));
+      return haystack.includes(query.text);
+    }
+
+    function syncSelectedToFilteredRows() {
+      const rows = filteredBase();
+      if (rows.length && !rows.some(d => d.fc === selected.fc)) selected = rows[0];
+    }
+
     function filteredBase() {
-      const q = search.value.trim().toLowerCase();
+      const query = searchQuery();
       const zone = zoneFilter.value;
       let rows = WAREHOUSES.filter(d => {
-        const hit = !q || [d.fc, d.city_state, d.zone, d.recommended_to].join(' ').toLowerCase().includes(q);
+        const hit = matchesSearch(d, query);
         const zoneHit = zone === 'All zones' || d.zone === zone;
         return hit && zoneHit;
       });
@@ -1023,6 +1052,7 @@
 
     function renderAll() {
       renderControls();
+      syncSelectedToFilteredRows();
       drawMap();
       renderList();
       renderBoards();
